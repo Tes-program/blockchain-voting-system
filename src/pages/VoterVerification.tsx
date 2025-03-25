@@ -1,4 +1,4 @@
-// src/pages/VoteVerification.tsx
+// src/pages/VoterVerification.tsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -36,8 +36,9 @@ import {
   Tooltip,
   Stack,
   useClipboard,
+  IconButton,
+  useToast,
 } from '@chakra-ui/react';
-import { FaEye } from 'react-icons/fa';
 import { 
   FaCheckCircle, 
   FaClock, 
@@ -49,66 +50,136 @@ import {
   FaEthereum,
   FaInfoCircle,
   FaQrcode,
+  FaExternalLinkAlt,
+  FaEye
 } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
+import { getVoteReceipt, verifyVote } from '../services/voteService';
 
-// Mock data - in a real app, this would come from your API
-const mockVoteData = {
-  transactionHash: '0x7f9e8f7e6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8',
-  blockNumber: 12345678,
-  timestamp: '2025-03-05T13:24:36',
-  election: {
-    id: '2',
-    title: 'Department Representative Election',
-    status: 'active',
-    startDate: '2025-03-05T10:00:00',
-    endDate: '2025-03-07T16:00:00',
-  },
-  candidate: {
-    id: '2',
-    name: 'Michael Chen',
-    party: 'Student Action Committee',
-  },
-  encryptedVoteData: 'QmZ9vNMBQjRCUjnzh6YYAo8jst3UUXvqXVhvjvJosGDzTx',
-  receiptId: 'V2025030513242',
-  ipfsHash: 'QmT8JKnCocLG5ByYPHYEcmEyMCHYLLNdRwPWZGxR3QuW7P',
-  verificationProof: 'QmX6zfZ3QYB9JtQfAJ6ZnPhj8FD6uYrV7vUzFcdK4GvwGN',
-};
+interface Candidate {
+  roleId: string;
+  roleTitle: string;
+  candidateId: string;
+  candidateName: string;
+}
+
+interface BlockchainData {
+  transactionHash: string;
+  blockNumber: number;
+}
+
+interface IpfsData {
+  receiptHash: string;
+}
+
+interface VoteData {
+  receiptId: string;
+  electionId: string;
+  electionTitle: string;
+  timestamp: string;
+  blockchainData: BlockchainData;
+  ipfsData: IpfsData;
+  verificationStatus: string;
+  selections: Candidate[];
+}
 
 const VoteVerification = () => {
   const { voteId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [voteData, setVoteData] = useState<typeof mockVoteData | null>(null);
+  const toast = useToast();
+  const [voteData, setVoteData] = useState<VoteData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [verificationStatus, setVerificationStatus] = useState('pending');
-  const { hasCopied, onCopy } = useClipboard(mockVoteData.transactionHash);
+  const { hasCopied, onCopy } = useClipboard('');
   const bgColor = useColorModeValue('gray.50', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   
-  // Fetch vote data
+  // Fetch vote data from API
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchVoteData = async () => {
       setIsLoading(true);
       try {
-        // In a real app, this would be an API call to get vote verification data
-        setTimeout(() => {
-          setVoteData(mockVoteData);
-          setIsLoading(false);
+        if (!voteId) {
+          toast({
+            title: "Error",
+            description: "Invalid vote receipt ID",
+            status: "error",
+            duration: 5000,
+            isClosable: true,
+          });
+          navigate('/elections');
+          return;
+        }
+        
+        // Get vote receipt
+        const response = await getVoteReceipt(voteId);
+        
+        if (response.success) {
+          setVoteData(response.data);
           
-          // Simulate verification process
-          setTimeout(() => {
-            setVerificationStatus('verified');
-          }, 2000);
-        }, 1500);
+          // Set the text for clipboard copying
+          if (response.data.blockchainData?.transactionHash) {
+            onCopy.value = response.data.blockchainData.transactionHash;
+          }
+          
+          // Start verification process
+          setVerificationStatus('verifying');
+          
+          try {
+            // Verify vote on blockchain
+            const verificationResponse = await verifyVote(voteId);
+            
+            if (verificationResponse.success && verificationResponse.data.verified) {
+              setVerificationStatus('verified');
+            } else {
+              setVerificationStatus('failed');
+              toast({
+                title: "Verification failed",
+                description: verificationResponse.message || "Could not verify vote on blockchain",
+                status: "error",
+                duration: 5000,
+                isClosable: true,
+              });
+            }
+          } catch (verifyError) {
+            console.error('Verification error:', verifyError);
+            setVerificationStatus('failed');
+            toast({
+              title: "Verification error",
+              description: "An error occurred while verifying the vote",
+              status: "error",
+              duration: 5000,
+              isClosable: true,
+            });
+          }
+        } else {
+          toast({
+            title: "Error fetching vote data",
+            description: response.message || "Failed to load vote information",
+            status: "error",
+            duration: 5000,
+            isClosable: true,
+          });
+          navigate('/elections');
+        }
       } catch (error) {
         console.error('Error fetching vote data:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load vote information. Please try again later.",
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+        navigate('/elections');
+      } finally {
         setIsLoading(false);
       }
     };
 
-    fetchData();
-  }, [voteId]);
+    fetchVoteData();
+  }, [voteId, toast, navigate, onCopy]);
 
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -121,6 +192,17 @@ const VoteVerification = () => {
       second: '2-digit'
     };
     return new Date(dateString).toLocaleDateString(undefined, options);
+  };
+
+  // Copy to clipboard function
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({
+      title: "Copied to clipboard",
+      status: "success",
+      duration: 2000,
+      isClosable: true,
+    });
   };
 
   // Loading state
@@ -167,18 +249,22 @@ const VoteVerification = () => {
             </HStack>
             <Spacer />
             <Badge 
-              colorScheme={verificationStatus === 'verified' ? 'green' : 'yellow'} 
+              colorScheme={
+                verificationStatus === 'verified' ? 'green' : 
+                verificationStatus === 'failed' ? 'red' : 'yellow'
+              } 
               fontSize="md" 
               py={1} 
               px={3}
               borderRadius="full"
             >
-              {verificationStatus === 'verified' ? 'Verified' : 'Verifying...'}
+              {verificationStatus === 'verified' ? 'Verified' : 
+               verificationStatus === 'failed' ? 'Verification Failed' : 'Verifying...'}
             </Badge>
           </Flex>
           
           <Text fontSize="md" mb={4}>
-            Your vote in <strong>{voteData.election.title}</strong> has been securely recorded on the blockchain.
+            Your vote in <strong>{voteData.electionTitle}</strong> has been securely recorded on the blockchain.
           </Text>
           
           <HStack fontSize="sm" color="gray.600">
@@ -199,21 +285,30 @@ const VoteVerification = () => {
               <Flex align="center">
                 <HStack>
                   <Icon 
-                    as={verificationStatus === 'verified' ? FaCheckCircle : FaClock} 
-                    color={verificationStatus === 'verified' ? 'green.500' : 'yellow.500'} 
+                    as={
+                      verificationStatus === 'verified' ? FaCheckCircle : 
+                      verificationStatus === 'failed' ? FaInfoCircle : FaClock
+                    } 
+                    color={
+                      verificationStatus === 'verified' ? 'green.500' : 
+                      verificationStatus === 'failed' ? 'red.500' : 'yellow.500'
+                    } 
                     boxSize={5} 
                   />
                   <Heading as="h3" size="md">
-                    {verificationStatus === 'verified' ? 'Vote Successfully Verified' : 'Verification in Progress'}
+                    {verificationStatus === 'verified' ? 'Vote Successfully Verified' : 
+                     verificationStatus === 'failed' ? 'Verification Failed' : 'Verification in Progress'}
                   </Heading>
                 </HStack>
                 <Spacer />
-                {verificationStatus !== 'verified' && <Spinner size="sm" color="yellow.500" />}
+                {verificationStatus === 'verifying' && <Spinner size="sm" color="yellow.500" />}
               </Flex>
               
               <Text>
                 {verificationStatus === 'verified' 
                   ? 'Your vote has been successfully verified on the blockchain. The vote integrity is confirmed.'
+                  : verificationStatus === 'failed'
+                  ? 'We encountered an issue verifying your vote on the blockchain. This does not necessarily mean your vote was not counted.'
                   : 'We are currently verifying your vote on the blockchain. This process ensures the integrity of your vote.'}
               </Text>
               
@@ -230,6 +325,15 @@ const VoteVerification = () => {
                   </Text>
                 </HStack>
               )}
+
+              {verificationStatus === 'failed' && (
+                <Alert status="warning" mt={2} borderRadius="md">
+                  <AlertIcon />
+                  <Text fontSize="sm">
+                    If you believe this is an error, please contact election administrators with your receipt ID.
+                  </Text>
+                </Alert>
+              )}
             </VStack>
           </CardBody>
         </Card>
@@ -244,11 +348,11 @@ const VoteVerification = () => {
                 </Heading>
                 
                 <Box>
-                  <Text fontWeight="bold">{voteData.election.title}</Text>
+                  <Text fontWeight="bold">{voteData.electionTitle}</Text>
                   <HStack fontSize="sm" color="gray.600" mt={1}>
                     <Text>
                       <Icon as={FaClock} mr={1} />
-                      {formatDate(voteData.election.startDate).split(',')[0]} - {formatDate(voteData.election.endDate).split(',')[0]}
+                      ID: {voteData.electionId}
                     </Text>
                   </HStack>
                 </Box>
@@ -257,16 +361,21 @@ const VoteVerification = () => {
                 
                 <Box>
                   <Text fontWeight="bold">Your vote for:</Text>
-                  <Box mt={2} p={3} bg={bgColor} borderRadius="md">
-                    <Flex align="center">
-                      <Text fontWeight="medium">{voteData.candidate.name}</Text>
-                      <Spacer />
-                      <Badge colorScheme="blue">{voteData.candidate.party}</Badge>
-                    </Flex>
-                  </Box>
+                  <VStack mt={2} spacing={3} align="stretch">
+                    {voteData.selections.map((selection, index) => (
+                      <Box key={index} p={3} bg={bgColor} borderRadius="md">
+                        <Text fontSize="sm" color="gray.600">
+                          {selection.roleTitle}:
+                        </Text>
+                        <Text fontWeight="medium">
+                          {selection.candidateName}
+                        </Text>
+                      </Box>
+                    ))}
+                  </VStack>
                   <Text fontSize="xs" mt={2} color="gray.500">
                     <Icon as={FaInfoCircle} mr={1} />
-                    Your actual vote is encrypted to maintain ballot secrecy
+                    Your actual vote is encrypted on the blockchain to maintain ballot secrecy
                   </Text>
                 </Box>
               </VStack>
@@ -282,7 +391,7 @@ const VoteVerification = () => {
                 
                 <Stat>
                   <StatLabel>Block Number</StatLabel>
-                  <StatNumber>{voteData.blockNumber}</StatNumber>
+                  <StatNumber>{voteData.blockchainData.blockNumber}</StatNumber>
                   <StatHelpText>
                     <Icon as={FaEthereum} mr={1} />
                     Ethereum Blockchain
@@ -295,12 +404,17 @@ const VoteVerification = () => {
                   <Text fontWeight="bold" mb={1}>Transaction Hash:</Text>
                   <Flex align="center">
                     <Code p={2} borderRadius="md" fontSize="xs" maxW="100%" overflow="hidden" isTruncated>
-                      {voteData.transactionHash}
+                      {voteData.blockchainData.transactionHash}
                     </Code>
-                    <Tooltip label={hasCopied ? "Copied!" : "Copy to clipboard"}>
-                      <Button size="sm" ml={2} onClick={onCopy} variant="ghost">
-                        <Icon as={FaCopy} />
-                      </Button>
+                    <Tooltip label="Copy to clipboard">
+                      <IconButton
+                        aria-label="Copy to clipboard"
+                        icon={<FaCopy />}
+                        size="sm"
+                        ml={2}
+                        onClick={() => copyToClipboard(voteData.blockchainData.transactionHash)}
+                        variant="ghost"
+                      />
                     </Tooltip>
                   </Flex>
                 </Box>
@@ -310,7 +424,7 @@ const VoteVerification = () => {
                   size="sm" 
                   colorScheme="blue" 
                   variant="outline"
-                  onClick={() => window.open(`https://etherscan.io/tx/${voteData.transactionHash}`, '_blank')}
+                  onClick={() => window.open(`https://etherscan.io/tx/${voteData.blockchainData.transactionHash}`, '_blank')}
                 >
                   View on Etherscan
                 </Button>
@@ -336,30 +450,36 @@ const VoteVerification = () => {
                     <HStack>
                       <Text fontWeight="medium">Vote IPFS Hash:</Text>
                       <Text fontFamily="monospace" fontSize="sm" isTruncated>
-                        {voteData.ipfsHash}
+                        {voteData.ipfsData.receiptHash}
                       </Text>
+                      <IconButton
+                        aria-label="Copy IPFS hash"
+                        icon={<FaCopy />}
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => copyToClipboard(voteData.ipfsData.receiptHash)}
+                      />
+                      <Link href={`https://ipfs.io/ipfs/${voteData.ipfsData.receiptHash}`} isExternal color="blue.500">
+                        <Icon as={FaExternalLinkAlt} boxSize={3} />
+                      </Link>
                     </HStack>
-                    <HStack>
-                      <Text fontWeight="medium">Encrypted Vote Data:</Text>
-                      <Text fontFamily="monospace" fontSize="sm" isTruncated>
-                        {voteData.encryptedVoteData}
-                      </Text>
-                    </HStack>
+                    <Text fontSize="xs" color="gray.600">
+                      The vote receipt is permanently stored on IPFS, a decentralized storage system.
+                    </Text>
                   </VStack>
                 </Box>
                 
                 <Box>
-                  <Text fontWeight="bold" mb={2}>Zero-Knowledge Proof:</Text>
+                  <Text fontWeight="bold" mb={2}>Verification Process:</Text>
                   <VStack align="stretch" spacing={2}>
-                    <HStack>
-                      <Text fontWeight="medium">Verification Proof:</Text>
-                      <Text fontFamily="monospace" fontSize="sm" isTruncated>
-                        {voteData.verificationProof}
-                      </Text>
-                    </HStack>
-                    <Text fontSize="xs" color="gray.600">
-                      The zero-knowledge proof verifies your vote was included in the tally without revealing your actual vote.
+                    <Text fontSize="sm">
+                      Your vote was verified using zero-knowledge proofs, ensuring that:
                     </Text>
+                    <VStack align="stretch" spacing={1} pl={4}>
+                      <Text fontSize="sm">• Your vote was included in the final tally</Text>
+                      <Text fontSize="sm">• The vote belongs to your wallet address</Text>
+                      <Text fontSize="sm">• The vote has not been tampered with</Text>
+                    </VStack>
                   </VStack>
                 </Box>
               </SimpleGrid>
@@ -373,6 +493,16 @@ const VoteVerification = () => {
             leftIcon={<FaQrcode />} 
             variant="outline" 
             colorScheme="brand"
+            onClick={() => {
+              // In a real implementation, this would generate and download a receipt
+              toast({
+                title: "Receipt download",
+                description: "Receipt download functionality will be available soon",
+                status: "info",
+                duration: 3000,
+                isClosable: true,
+              });
+            }}
           >
             Download Receipt
           </Button>
@@ -380,7 +510,7 @@ const VoteVerification = () => {
           <Button 
             leftIcon={<FaEye />} 
             colorScheme="brand"
-            onClick={() => navigate(`/results/${voteData.election.id}`)}
+            onClick={() => navigate(`/results/${voteData.electionId}`)}
           >
             View Election Results
           </Button>
@@ -389,7 +519,5 @@ const VoteVerification = () => {
     </Container>
   );
 };
-
-// Add this at the top of your import statements
 
 export default VoteVerification;

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/pages/VoterRegistration.tsx
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+// Updated src/pages/VoterRegistration.tsx
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   Box,
   Container,
@@ -24,19 +24,43 @@ import StudentRegistrationForm from "../components/registration/StudentRegistrat
 import InstitutionRegistrationForm from "../components/registration/InsitutionRegistrationForm";
 
 const VoterRegistration = () => {
-  const { isAuthenticated, user, login } = useAuth();
+  const { isAuthenticated, user, login, register, needsRegistration } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [initialTabIndex, setInitialTabIndex] = useState(0);
+  
+  // Set initial tab based on query param or state
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    if (tab === 'institution') {
+      setInitialTabIndex(1);
+    }
+  }, [location]);
 
   const handleStudentSubmit = async (data: any) => {
     setIsSubmitting(true);
     try {
-      // This would be an API call to your backend in a real app
-      console.log("Student registration data:", data);
-
-      // Mock successful registration
-      setTimeout(() => {
+      // Format data to match API expectations
+      const registrationData = {
+        email: data.email,
+        name: `${data.firstName} ${data.lastName}`,
+        walletAddress: user?.walletAddress,
+        role: "student",
+        profileData: {
+          studentId: data.studentId,
+          department: data.department,
+          level: data.level,
+          phoneNumber: data.phoneNumber
+        }
+      };
+      
+      // Call register method from auth context
+      const result = await register(registrationData);
+      
+      if (result.success) {
         toast({
           title: "Registration successful",
           description: "You have been registered as a student voter",
@@ -44,13 +68,21 @@ const VoterRegistration = () => {
           duration: 5000,
           isClosable: true,
         });
+        // Redirect to elections dashboard
         navigate("/elections");
-      }, 1500);
-    } catch (error: any) {
+      } else {
+        toast({
+          title: "Registration failed",
+          description: result.message || "An error occurred during registration",
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
       toast({
         title: "Registration failed",
-        description:
-          (error as Error).message || "An error occurred during registration",
+        description: error instanceof Error ? error.message : "An error occurred during registration",
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -63,26 +95,51 @@ const VoterRegistration = () => {
   const handleInstitutionSubmit = async (data: any) => {
     setIsSubmitting(true);
     try {
-      // This would be an API call to your backend in a real app
-      console.log("Institution registration data:", data);
-
-      // Mock successful registration
-      setTimeout(() => {
+      // Format data to match API expectations
+      const registrationData = {
+        email: data.email,
+        name: data.contactPersonName,
+        walletAddress: user?.walletAddress,
+        role: "institution",
+        profileData: {
+          institutionName: data.institutionName,
+          institutionType: data.institutionType,
+          address: data.address,
+          city: data.city,
+          state: data.state,
+          contactPersonTitle: data.contactPersonTitle,
+          contactPersonName: data.contactPersonName,
+          phoneNumber: data.phoneNumber,
+          description: data.description
+        }
+      };
+      
+      // Call register method from auth context
+      const result = await register(registrationData);
+      
+      if (result.success) {
         toast({
           title: "Registration successful",
-          description:
-            "Your institution has been registered. Please wait for approval.",
+          description: "Your institution has been registered successfully",
           status: "success",
           duration: 5000,
           isClosable: true,
         });
+        // Redirect to admin dashboard
         navigate("/admin");
-      }, 1500);
+      } else {
+        toast({
+          title: "Registration failed",
+          description: result.message || "An error occurred during registration",
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+      }
     } catch (error: any) {
       toast({
         title: "Registration failed",
-        description:
-          (error as Error).message || "An error occurred during registration",
+        description: error.message || "An error occurred during registration",
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -92,8 +149,62 @@ const VoterRegistration = () => {
     }
   };
 
-  // Render sign-in prompt if not authenticated
-  if (!isAuthenticated) {
+  // Handle login and check if registration is needed
+  const handleLoginClick = async () => {
+    try {
+      const result = await login();
+      
+      if (result.success) {
+        if (result.userExists) {
+          // User exists, redirect based on role
+          if (result.role === 'institution') {
+            navigate('/admin');
+          } else {
+            navigate('/elections');
+          }
+        } else if (result.needsRegistration) {
+          // User needs to register, stay on this page
+          toast({
+            title: "Registration required",
+            description: "Please complete your registration to continue",
+            status: "info",
+            duration: 5000,
+            isClosable: true,
+          });
+        }
+      } else {
+        toast({
+          title: "Login failed",
+          description: result.error || "Failed to login with Web3Auth",
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Login error",
+        description: error instanceof Error ? error.message : "An error occurred during login",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
+
+  // If already authenticated and registration is complete, redirect
+  useEffect(() => {
+    if (isAuthenticated && !needsRegistration) {
+      if (user?.role === 'institution') {
+        navigate('/admin');
+      } else {
+        navigate('/elections');
+      }
+    }
+  }, [isAuthenticated, needsRegistration, user, navigate]);
+
+  // Render sign-in prompt if not authenticated and doesn't need registration
+  if (!user && !needsRegistration) {
     return (
       <Container maxW="4xl" py={12}>
         <VStack spacing={8} align="center">
@@ -122,7 +233,7 @@ const VoterRegistration = () => {
                   as={FaVoteYea}
                   size="80px"
                   color="brand.500"
-                  aria-label="Student"
+                  aria-label="Vote"
                 />
 
                 <Text textAlign="center">
@@ -131,7 +242,7 @@ const VoterRegistration = () => {
                 </Text>
 
                 <Button
-                  onClick={login}
+                  onClick={handleLoginClick}
                   colorScheme="brand"
                   size="lg"
                   width="full"
@@ -147,7 +258,7 @@ const VoterRegistration = () => {
     );
   }
 
-  // Render registration form for authenticated users
+  // If wallet is connected but needs registration
   return (
     <Container maxW="4xl" py={8}>
       <VStack spacing={8}>
@@ -167,7 +278,7 @@ const VoterRegistration = () => {
           overflow="hidden"
           p={6}
         >
-          <Tabs isFitted variant="enclosed" colorScheme="brand">
+          <Tabs isFitted variant="enclosed" colorScheme="brand" defaultIndex={initialTabIndex}>
             <TabList mb="1em">
               <Tab>Student Voter</Tab>
               <Tab>Institution</Tab>
@@ -176,7 +287,6 @@ const VoterRegistration = () => {
               <TabPanel>
                 <Box py={4}>
                   <Center mb={8}>
-                    {/* Use React Icons instead of image files */}
                     <Box
                       as={FaUserGraduate}
                       size="80px"
@@ -198,7 +308,6 @@ const VoterRegistration = () => {
               <TabPanel>
                 <Box py={4}>
                   <Center mb={8}>
-                    {/* Use React Icons instead of image files */}
                     <Box
                       as={FaUniversity}
                       size="80px"

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/pages/AdminDashboard.tsx
 import React, { useState, useEffect } from "react";
 import { Link as RouterLink } from "react-router-dom";
@@ -22,8 +21,6 @@ import {
   StatLabel,
   StatNumber,
   StatHelpText,
-  StatArrow,
-  StatGroup,
   Card,
   CardBody,
   HStack,
@@ -60,6 +57,8 @@ import {
   AlertIcon,
   AlertTitle,
   Divider,
+  Center,
+  Spinner,
 } from "@chakra-ui/react";
 import {
   Stepper,
@@ -74,7 +73,6 @@ import {
   useSteps,
   Tag,
   TagLabel,
-  TagCloseButton,
   Wrap,
   WrapItem,
   Radio,
@@ -82,9 +80,6 @@ import {
   FormHelperText,
   Switch,
   Checkbox,
-  Grid,
-  GridItem,
-  ButtonGroup,
   useDisclosure as useModalDisclosure,
   ModalContent as ChakraModalContent,
   Avatar,
@@ -99,59 +94,14 @@ import {
   FaEye,
 } from "react-icons/fa";
 import { useAuth } from "../context/AuthContext";
+import { 
+  getAllElections, 
+  createElection, 
+  updateElection, 
+  deleteElection 
+} from "../services/electionService";
 
-// Mock data - in a real app, this would come from your API
-const mockElections = [
-  {
-    id: "1",
-    title: "Student Union Presidential Election",
-    description:
-      "Vote for the next Student Union President for the academic year 2024/2025.",
-    startDate: "2025-03-10T09:00:00",
-    endDate: "2025-03-12T17:00:00",
-    status: "upcoming",
-    candidates: 5,
-    votersCount: 324,
-    totalVotesCast: 0,
-  },
-  {
-    id: "2",
-    title: "Department Representative Election",
-    description:
-      "Choose your department representatives for various committees.",
-    startDate: "2025-03-05T10:00:00",
-    endDate: "2025-03-07T16:00:00",
-    status: "active",
-    candidates: 12,
-    votersCount: 156,
-    totalVotesCast: 89,
-  },
-  {
-    id: "3",
-    title: "Campus Facilities Referendum",
-    description:
-      "Vote on the proposed changes to campus facilities and resource allocation.",
-    startDate: "2025-02-25T08:00:00",
-    endDate: "2025-02-28T20:00:00",
-    status: "completed",
-    candidates: 2,
-    votersCount: 567,
-    totalVotesCast: 423,
-  },
-  {
-    id: "4",
-    title: "Student Council Election",
-    description:
-      "Elect members of the student council for the next academic year.",
-    startDate: "2025-02-15T09:00:00",
-    endDate: "2025-02-18T17:00:00",
-    status: "completed",
-    candidates: 8,
-    votersCount: 412,
-    totalVotesCast: 387,
-  },
-];
-
+// Steps for creating an election
 const steps = [
   { title: "Basic Info", description: "Election details" },
   { title: "Roles & Positions", description: "Define election structure" },
@@ -160,57 +110,68 @@ const steps = [
   { title: "Review", description: "Finalize election" },
 ];
 
+interface Candidate {
+  id: string;
+  name: string;
+  party: string;
+  manifesto: string;
+  imageUrl: string;
+}
+
+interface Role {
+  id: string;
+  title: string;
+  description: string;
+  candidates: Candidate[];
+}
+
+interface Election {
+  id: string;
+  title: string;
+  description: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  type: string;
+  totalEligibleVoters: number;
+  totalVotesCast: number;
+  roles?: Role[];
+  eligibility?: {
+    type: string;
+    departments?: string[];
+    levels?: string[];
+    description: string;
+  };
+  stats: {
+    totalElections: number,
+    numberOfActiveElections: number,
+    totalNumberOfRegisteredVoters: number,
+    totalNumberOfVotesCast: number,
+    participationRate: string
+  }
+}
+
 const AdminDashboard = () => {
   const { user } = useAuth();
   const toast = useToast();
-  interface Election {
-    id: string;
-    title: string;
-    description: string;
-    startDate: string;
-    endDate: string;
-    status: string;
-    candidates: number;
-    votersCount: number;
-    totalVotesCast: number;
-  }
-
   const [elections, setElections] = useState<Election[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { isOpen, onOpen, onClose } = useDisclosure();
-  const [selectedElection, setSelectedElection] = useState<Election | null>(
-    null
-  );
+  const [selectedElection, setSelectedElection] = useState<Election | null>(null);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     startDate: "",
     endDate: "",
     eligibilityType: "all",
+    instructions: "Select one candidate for each position",
   });
   const [activeStep, setActiveStep] = useState(0);
-  const { activeStep: stepperIndex, setActiveStep: setStepperIndex } = useSteps(
-    {
-      index: 0,
-      count: steps.length,
-    }
-  );
+  const { activeStep: stepperIndex, setActiveStep: setStepperIndex } = useSteps({
+    index: 0,
+    count: steps.length,
+  });
   const [electionType, setElectionType] = useState("simple");
-  interface Candidate {
-    id: string;
-    name: string;
-    party: string;
-    manifesto: string;
-    imageUrl: string;
-  }
-
-  interface Role {
-    id: string;
-    title: string;
-    description: string;
-    candidates: Candidate[];
-  }
-
   const [roles, setRoles] = useState<Role[]>([
     { id: "1", title: "Position", description: "", candidates: [] },
   ]);
@@ -224,53 +185,100 @@ const AdminDashboard = () => {
     manifesto: "",
     imageUrl: "",
   });
+  const [stats, setStats] = useState({
+    totalElections: 0,
+    numberOfActiveElections: 0,
+    totalNumberOfRegisteredVoters: 0,
+    totalNumberOfVotesCast: 0,
+    participationRate: "0%"
+  });
 
   const bgSecColor = useColorModeValue("gray.50", "gray.700");
 
-  // Fetch elections data
+  // Fetch elections data for this institution
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // In a real app, this would be an API call
-        setTimeout(() => {
-          setElections(mockElections);
-          setIsLoading(false);
-        }, 1000);
+        const response = await getAllElections();
+        
+        if (response.success && typeof response.data === 'object') {
+          // Set elections array from the nested structure
+          if (response.data.elections && Array.isArray(response.data.elections)) {
+            setElections(response.data.elections);
+            
+            // Store stats separately
+            if (response.data.stats) {
+              setStats(response.data.stats);
+            }
+          } else {
+            // If we can't find an array, log error and set empty array
+            console.error("Unexpected data format:", response.data);
+            setElections([]);
+            toast({
+              title: "Data format error",
+              description: "Unable to process elections data. Please try again later.",
+              status: "error",
+              duration: 5000,
+              isClosable: true,
+            });
+          }
+        } else {
+          // Handle unsuccessful response
+          console.error("Failed to fetch elections:", response.message || "Unknown error");
+          setElections([]);
+          toast({
+            title: "Error fetching elections",
+            description: response.message || "Failed to load elections",
+            status: "error",
+            duration: 5000,
+            isClosable: true,
+          });
+        }
       } catch (error) {
         console.error("Error fetching elections:", error);
+        setElections([]);
+        toast({
+          title: "Error",
+          description: "Failed to load elections. Please try again later.",
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+      } finally {
         setIsLoading(false);
       }
     };
-
     fetchData();
-  }, []);
+  }, [toast]);
 
-  // Calculate dashboard stats
-  const totalElections = elections.length;
-  const activeElections = elections.filter((e) => e.status === "active").length;
-  const completedElections = elections.filter(
-    (e) => e.status === "completed"
-  ).length;
-  const totalVoters = elections.reduce(
-    (sum, election) => sum + election.votersCount,
-    0
-  );
-  const totalVotes = elections.reduce(
-    (sum, election) => sum + election.totalVotesCast,
-    0
-  );
-  const participationRate =
-    totalVoters > 0 ? Math.round((totalVotes / totalVoters) * 100) : 0;
+  const electionsArray = Array.isArray(elections) ? elections : [];
+
+  // Calculate dashboard stats with safety checks
+  // const totalElections = electionsArray.length;
+  // const activeElections = electionsArray.filter((e) => e.status === "active").length;
+  // const completedElections = electionsArray.filter(
+  //   (e) => e.status === "completed"
+  // ).length;
+  // const totalVoters = electionsArray.reduce(
+  //   (sum, election) => sum + (election.totalEligibleVoters || 0),
+  //   0
+  // );
+  // const totalVotes = electionsArray.reduce(
+  //   (sum, election) => sum + (election.totalVotesCast || 0),
+  //   0
+  // );
+
+
 
   // Format date for display
   const formatDate = (dateString: string) => {
     const options: Intl.DateTimeFormatOptions = {
-      year: "numeric" as const,
-      month: "long" as const,
-      day: "numeric" as const,
-      hour: "2-digit" as const,
-      minute: "2-digit" as const,
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     };
     return new Date(dateString).toLocaleDateString(undefined, options);
   };
@@ -385,7 +393,7 @@ const AdminDashboard = () => {
   };
 
   // Function to handle form input changes for candidates
-  const handleCandidateInputChange = (e) => {
+  const handleCandidateInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setCandidateForm({
       ...candidateForm,
@@ -394,7 +402,7 @@ const AdminDashboard = () => {
   };
 
   // Function to create the election (final step)
-  const handleCreateElectionFinal = () => {
+  const handleCreateElectionFinal = async () => {
     // Validate that each role has at least one candidate
     const invalidRoles = roles.filter((role) => role.candidates.length === 0);
 
@@ -409,28 +417,60 @@ const AdminDashboard = () => {
       return;
     }
 
-    // Create the election with all the collected data
-    const election = {
-      ...formData,
-      type: electionType,
-      roles: roles,
-      // Other settings from the form
-    };
-
-    // In a real app, this would be an API call to create the election
-    console.log("Creating election:", election);
-
-    toast({
-      title: "Election created",
-      description: `${formData.title} has been created successfully`,
-      status: "success",
-      duration: 5000,
-      isClosable: true,
-    });
-
-    // Reset form and close modal
-    resetForm();
-    onClose();
+    try {
+      // Create the election API call
+      const electionData = {
+        title: formData.title,
+        description: formData.description,
+        instructions: formData.instructions,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        type: electionType,
+        eligibility: {
+          type: formData.eligibilityType,
+          departments: formData.eligibilityType === "department" ? ["Computer Science", "Information Technology"] : [],
+          levels: formData.eligibilityType === "level" ? ["300", "400"] : [],
+          description: `Open to ${formData.eligibilityType === "all" ? "all" : formData.eligibilityType === "department" ? "specific departments" : "specific levels"}`
+        },
+        roles: roles
+      };
+      
+      const response = await createElection(electionData);
+      
+      if (response.success) {
+        toast({
+          title: "Election created",
+          description: `${formData.title} has been created successfully`,
+          status: "success",
+          duration: 5000,
+          isClosable: true,
+        });
+        
+        // Add the new election to the list
+        setElections([...elections, response.data]);
+        
+        // Reset form and close modal
+        resetForm();
+        onClose();
+      } else {
+        toast({
+          title: "Error creating election",
+          description: response.message || "Failed to create election",
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      console.error("Error creating election:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create election. Please try again.",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
   };
 
   // Function to reset the form
@@ -441,6 +481,7 @@ const AdminDashboard = () => {
       startDate: "",
       endDate: "",
       eligibilityType: "all",
+      instructions: "Select one candidate for each position",
     });
     setElectionType("simple");
     setRoles([{ id: "1", title: "Position", description: "", candidates: [] }]);
@@ -449,7 +490,7 @@ const AdminDashboard = () => {
   };
 
   // Handle form input changes
-  const handleInputChange = (e: { target: { name: any; value: any } }) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData({
       ...formData,
@@ -460,13 +501,7 @@ const AdminDashboard = () => {
   // Handle election creation
   const handleCreateElection = () => {
     // Reset form data
-    setFormData({
-      title: "",
-      description: "",
-      startDate: "",
-      endDate: "",
-      eligibilityType: "all",
-    });
+    resetForm();
     setSelectedElection(null);
     onOpen();
   };
@@ -479,13 +514,20 @@ const AdminDashboard = () => {
       description: election.description,
       startDate: formatDateForInput(election.startDate),
       endDate: formatDateForInput(election.endDate),
-      eligibilityType: "all", // Assuming default
+      eligibilityType: election.eligibility?.type || "all",
+      instructions: "Select one candidate for each position", // Default instruction if not present
     });
+    
+    if (election.roles) {
+      setRoles(election.roles);
+    }
+    
+    setElectionType(election.type);
     onOpen();
   };
 
-  // Handle form submission
-  const handleSubmit = () => {
+  // Handle form submission (for edit)
+  const handleSubmit = async () => {
     // Validate form data
     if (
       !formData.title ||
@@ -518,21 +560,52 @@ const AdminDashboard = () => {
       return;
     }
 
-    if (selectedElection) {
-      // Update existing election
+    try {
+      if (selectedElection) {
+        // Update existing election
+        const updateData = {
+          title: formData.title,
+          description: formData.description,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+          instructions: formData.instructions,
+          eligibility: {
+            type: formData.eligibilityType,
+            description: `Open to ${formData.eligibilityType === "all" ? "all" : formData.eligibilityType === "department" ? "specific departments" : "specific levels"}`
+          }
+        };
+        
+        const response = await updateElection(selectedElection.id, updateData);
+        
+        if (response.success) {
+          toast({
+            title: "Election updated",
+            description: `${formData.title} has been updated successfully`,
+            status: "success",
+            duration: 5000,
+            isClosable: true,
+          });
+          
+          // Update local state with the updated election
+          setElections(elections.map(el => 
+            el.id === selectedElection.id ? { ...el, ...updateData } : el
+          ));
+        } else {
+          toast({
+            title: "Error updating election",
+            description: response.message || "Failed to update election",
+            status: "error",
+            duration: 5000,
+            isClosable: true,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error updating election:", error);
       toast({
-        title: "Election updated",
-        description: `${formData.title} has been updated successfully`,
-        status: "success",
-        duration: 5000,
-        isClosable: true,
-      });
-    } else {
-      // Create new election
-      toast({
-        title: "Election created",
-        description: `${formData.title} has been created successfully`,
-        status: "success",
+        title: "Error",
+        description: "Failed to update election. Please try again.",
+        status: "error",
         duration: 5000,
         isClosable: true,
       });
@@ -543,18 +616,40 @@ const AdminDashboard = () => {
   };
 
   // Handle election deletion
-  const handleDeleteElection = (id: string) => {
-    // In a real app, this would call your API to delete the election
-    toast({
-      title: "Election deleted",
-      description: "The election has been deleted successfully",
-      status: "success",
-      duration: 5000,
-      isClosable: true,
-    });
-
-    // Update local state
-    setElections(elections.filter((election) => election.id !== id));
+  const handleDeleteElection = async (id: string) => {
+    try {
+      const response = await deleteElection(id);
+      
+      if (response.success) {
+        toast({
+          title: "Election deleted",
+          description: "The election has been deleted successfully",
+          status: "success",
+          duration: 5000,
+          isClosable: true,
+        });
+        
+        // Update local state by removing the deleted election
+        setElections(elections.filter(election => election.id !== id));
+      } else {
+        toast({
+          title: "Error deleting election",
+          description: response.message || "Failed to delete election",
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting election:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete election. Please try again.",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
   };
 
   // Calculate time remaining
@@ -602,10 +697,10 @@ const AdminDashboard = () => {
           <CardBody>
             <Stat>
               <StatLabel>Total Elections</StatLabel>
-              <StatNumber>{totalElections}</StatNumber>
+              <StatNumber>{stats.totalElections}</StatNumber>
               <HStack>
                 <Icon as={FaCalendarAlt} color="brand.500" />
-                <StatHelpText mb="0">{activeElections} active</StatHelpText>
+                <StatHelpText mb="0">{stats.numberOfActiveElections} active</StatHelpText>
               </HStack>
             </Stat>
           </CardBody>
@@ -615,7 +710,7 @@ const AdminDashboard = () => {
           <CardBody>
             <Stat>
               <StatLabel>Registered Voters</StatLabel>
-              <StatNumber>{totalVoters}</StatNumber>
+              <StatNumber>{stats.totalNumberOfRegisteredVoters}</StatNumber>
               <HStack>
                 <Icon as={FaUsers} color="brand.500" />
                 <StatHelpText mb="0">Across all elections</StatHelpText>
@@ -628,7 +723,7 @@ const AdminDashboard = () => {
           <CardBody>
             <Stat>
               <StatLabel>Total Votes Cast</StatLabel>
-              <StatNumber>{totalVotes}</StatNumber>
+              <StatNumber>{stats.totalNumberOfVotesCast}</StatNumber>
               <HStack>
                 <Icon as={FaVoteYea} color="brand.500" />
                 <StatHelpText mb="0">In all elections</StatHelpText>
@@ -641,7 +736,7 @@ const AdminDashboard = () => {
           <CardBody>
             <Stat>
               <StatLabel>Participation Rate</StatLabel>
-              <StatNumber>{participationRate}%</StatNumber>
+              <StatNumber>{stats.participationRate}%</StatNumber>
               <HStack>
                 <Icon as={FaCheck} color="brand.500" />
                 <StatHelpText mb="0">Overall voter turnout</StatHelpText>
@@ -663,315 +758,398 @@ const AdminDashboard = () => {
 
           <TabPanels>
             <TabPanel px={0}>
-              <TableContainer>
-                <Table variant="simple">
-                  <Thead>
-                    <Tr>
-                      <Th>Title</Th>
-                      <Th>Status</Th>
-                      <Th>Timeline</Th>
-                      <Th>Participation</Th>
-                      <Th>Actions</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {elections.map((election) => (
-                      <Tr key={election.id}>
-                        <Td>
-                          <Text fontWeight="semibold">{election.title}</Text>
-                          <Text fontSize="sm" color="gray.600" noOfLines={1}>
-                            {election.description}
-                          </Text>
-                        </Td>
-                        <Td>{getStatusBadge(election.status)}</Td>
-                        <Td>
-                          <Text fontSize="sm">
-                            {formatDate(election.startDate).split(",")[0]}
-                            {" - "}
-                            {formatDate(election.endDate).split(",")[0]}
-                          </Text>
-                          <Text
-                            fontSize="sm"
-                            fontWeight="medium"
-                            color="brand.600"
-                          >
-                            {getTimeInfo(election)}
-                          </Text>
-                        </Td>
-                        <Td>
-                          <Text fontSize="sm">
-                            {election.totalVotesCast} / {election.votersCount}{" "}
-                            votes
-                          </Text>
-                          <Text fontSize="sm">
-                            {election.votersCount > 0
-                              ? `${Math.round(
-                                  (election.totalVotesCast /
-                                    election.votersCount) *
-                                    100
-                                )}% participation`
-                              : "0% participation"}
-                          </Text>
-                        </Td>
-                        <Td>
-                          <Menu>
-                            <MenuButton
-                              as={IconButton}
-                              icon={<FaEllipsisV />}
-                              variant="ghost"
-                              aria-label="Options"
-                            />
-                            <MenuList>
-                              <MenuItem
-                                icon={<FaEye />}
-                                as={RouterLink}
-                                to={`/elections/${election.id}`}
-                              >
-                                View Details
-                              </MenuItem>
-
-                              {election.status === "completed" && (
+              {isLoading ? (
+                <Center py={10}>
+                  <VStack spacing={4}>
+                    <Spinner size="xl" color="brand.500" thickness="4px" />
+                    <Text>Loading elections...</Text>
+                  </VStack>
+                </Center>
+              ) : elections.length === 0 ? (
+                <Box 
+                  p={8} 
+                  textAlign="center" 
+                  borderWidth="1px" 
+                  borderRadius="lg"
+                  bg={bgSecColor}
+                >
+                  <Heading size="md" mb={2}>No Elections</Heading>
+                  <Text mb={4}>You haven't created any elections yet.</Text>
+                  <Button 
+                    leftIcon={<FaPlus />} 
+                    colorScheme="brand"
+                    onClick={handleCreateElection}
+                  >
+                    Create Your First Election
+                  </Button>
+                </Box>
+              ) : (
+                <TableContainer>
+                  <Table variant="simple">
+                    <Thead>
+                      <Tr>
+                        <Th>Title</Th>
+                        <Th>Status</Th>
+                        <Th>Timeline</Th>
+                        <Th>Participation</Th>
+                        <Th>Actions</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {elections.map((election) => (
+                        <Tr key={election.id}>
+                          <Td>
+                            <Text fontWeight="semibold">{election.title}</Text>
+                            <Text fontSize="sm" color="gray.600" noOfLines={1}>
+                              {election.description}
+                            </Text>
+                          </Td>
+                          <Td>{getStatusBadge(election.status)}</Td>
+                          <Td>
+                            <Text fontSize="sm">
+                              {formatDate(election.startDate).split(",")[0]}
+                              {" - "}
+                              {formatDate(election.endDate).split(",")[0]}
+                            </Text>
+                            <Text
+                              fontSize="sm"
+                              fontWeight="medium"
+                              color="brand.600"
+                            >
+                              {getTimeInfo(election)}
+                            </Text>
+                          </Td>
+                          <Td>
+                            <Text fontSize="sm">
+                              {election.totalVotesCast} / {election.totalEligibleVoters}{" "}
+                              votes
+                            </Text>
+                            <Text fontSize="sm">
+                              {election.totalEligibleVoters > 0
+                                ? `${Math.round(
+                                    (election.totalVotesCast /
+                                      election.totalEligibleVoters) *
+                                      100
+                                  )}% participation`
+                                : "0% participation"}
+                            </Text>
+                          </Td>
+                          <Td>
+                            <Menu>
+                              <MenuButton
+                                as={IconButton}
+                                icon={<FaEllipsisV />}
+                                variant="ghost"
+                                aria-label="Options"
+                              />
+                              <MenuList>
                                 <MenuItem
                                   icon={<FaEye />}
                                   as={RouterLink}
-                                  to={`/results/${election.id}`}
+                                  to={`/elections/${election.id}`}
                                 >
-                                  View Results
+                                  View Details
                                 </MenuItem>
-                              )}
 
-                              {election.status === "upcoming" && (
-                                <MenuItem
+                                {election.status === "completed" && (
+                                  <MenuItem
+                                    icon={<FaEye />}
+                                    as={RouterLink}
+                                    to={`/results/${election.id}`}
+                                  >
+                                    View Results
+                                  </MenuItem>
+                                )}
+
+                                {election.status === "upcoming" && (
+                                  <MenuItem
+                                    icon={<FaEdit />}
+                                    onClick={() => handleEditElection(election)}
+                                  >
+                                    Edit Election
+                                  </MenuItem>
+                                )}
+
+                                {election.status === "upcoming" && (
+                                  <MenuItem
+                                    icon={<FaTrash />}
+                                    color="red.500"
+                                    onClick={() =>
+                                      handleDeleteElection(election.id)
+                                    }
+                                  >
+                                    Delete Election
+                                  </MenuItem>
+                                )}
+                              </MenuList>
+                            </Menu>
+                          </Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </TableContainer>
+              )}
+            </TabPanel>
+
+            <TabPanel px={0}>
+              {isLoading ? (
+                <Center py={10}>
+                  <Spinner size="xl" color="brand.500" thickness="4px" />
+                </Center>
+              ) : elections.filter(e => e.status === 'active').length === 0 ? (
+                <Box 
+                  p={8} 
+                  textAlign="center" 
+                  borderWidth="1px" 
+                  borderRadius="lg"
+                  bg={bgSecColor}
+                >
+                  <Heading size="md" mb={2}>No Active Elections</Heading>
+                  <Text>You don't have any active elections at the moment.</Text>
+                </Box>
+              ) : (
+                <TableContainer>
+                  <Table variant="simple">
+                    <Thead>
+                      <Tr>
+                        <Th>Title</Th>
+                        <Th>Timeline</Th>
+                        <Th>Participation</Th>
+                        <Th>Actions</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {electionsArray
+                        .filter((e) => e.status === "active")
+                        .map((election) => (
+                          <Tr key={election.id}>
+                            <Td>
+                              <Text fontWeight="semibold">{election.title}</Text>
+                              <Text fontSize="sm" color="gray.600" noOfLines={1}>
+                                {election.description}
+                              </Text>
+                            </Td>
+                            <Td>
+                              <Text fontSize="sm">
+                                {formatDate(election.startDate).split(",")[0]}
+                                {" - "}
+                                {formatDate(election.endDate).split(",")[0]}
+                              </Text>
+                              <Text
+                                fontSize="sm"
+                                fontWeight="medium"
+                                color="brand.600"
+                              >
+                                {getTimeInfo(election)}
+                              </Text>
+                            </Td>
+                            <Td>
+                              <Text fontSize="sm">
+                                {election.totalVotesCast} / {election.totalEligibleVoters}{" "}
+                                votes
+                              </Text>
+                              <Text fontSize="sm">
+                                {election.totalEligibleVoters > 0
+                                  ? `${Math.round(
+                                      (election.totalVotesCast /
+                                        election.totalEligibleVoters) *
+                                        100
+                                    )}% participation`
+                                  : "0% participation"}
+                              </Text>
+                            </Td>
+                            <Td>
+                              <Button
+                                as={RouterLink}
+                                to={`/elections/${election.id}`}
+                                size="sm"
+                                leftIcon={<FaEye />}
+                                colorScheme="brand"
+                              >
+                                Monitor
+                              </Button>
+                            </Td>
+                          </Tr>
+                        ))}
+                    </Tbody>
+                  </Table>
+                </TableContainer>
+              )}
+            </TabPanel>
+
+            <TabPanel px={0}>
+              {isLoading ? (
+                <Center py={10}>
+                  <Spinner size="xl" color="brand.500" thickness="4px" />
+                </Center>
+              ) : elections.filter(e => e.status === 'upcoming').length === 0 ? (
+                <Box 
+                  p={8} 
+                  textAlign="center" 
+                  borderWidth="1px" 
+                  borderRadius="lg"
+                  bg={bgSecColor}
+                >
+                  <Heading size="md" mb={2}>No Upcoming Elections</Heading>
+                  <Text mb={4}>You don't have any upcoming elections scheduled.</Text>
+                  <Button 
+                    leftIcon={<FaPlus />} 
+                    colorScheme="brand"
+                    onClick={handleCreateElection}
+                  >
+                    Create Election
+                  </Button>
+                </Box>
+              ) : (
+                <TableContainer>
+                  <Table variant="simple">
+                    <Thead>
+                      <Tr>
+                        <Th>Title</Th>
+                        <Th>Timeline</Th>
+                        <Th>Registered Voters</Th>
+                        <Th>Actions</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {electionsArray
+                        .filter((e) => e.status === "upcoming")
+                        .map((election) => (
+                          <Tr key={election.id}>
+                            <Td>
+                              <Text fontWeight="semibold">{election.title}</Text>
+                              <Text fontSize="sm" color="gray.600" noOfLines={1}>
+                                {election.description}
+                              </Text>
+                            </Td>
+                            <Td>
+                            <Text fontSize="sm">
+                                {formatDate(election.startDate).split(",")[0]}
+                                {" - "}
+                                {formatDate(election.endDate).split(",")[0]}
+                              </Text>
+                              <Text
+                                fontSize="sm"
+                                fontWeight="medium"
+                                color="brand.600"
+                              >
+                                {getTimeInfo(election)}
+                              </Text>
+                            </Td>
+                            <Td>
+                              <Text fontSize="sm">
+                                {election.totalEligibleVoters} voters registered
+                              </Text>
+                            </Td>
+                            <Td>
+                              <HStack spacing={2}>
+                                <IconButton
                                   icon={<FaEdit />}
+                                  aria-label="Edit"
+                                  size="sm"
                                   onClick={() => handleEditElection(election)}
-                                >
-                                  Edit Election
-                                </MenuItem>
-                              )}
-
-                              {election.status === "upcoming" && (
-                                <MenuItem
+                                  colorScheme="blue"
+                                />
+                                <IconButton
                                   icon={<FaTrash />}
-                                  color="red.500"
+                                  aria-label="Delete"
+                                  size="sm"
                                   onClick={() =>
                                     handleDeleteElection(election.id)
                                   }
-                                >
-                                  Delete Election
-                                </MenuItem>
-                              )}
-                            </MenuList>
-                          </Menu>
-                        </Td>
+                                  colorScheme="red"
+                                />
+                              </HStack>
+                            </Td>
+                          </Tr>
+                        ))}
+                    </Tbody>
+                  </Table>
+                </TableContainer>
+              )}
+            </TabPanel>
+
+            <TabPanel px={0}>
+              {isLoading ? (
+                <Center py={10}>
+                  <Spinner size="xl" color="brand.500" thickness="4px" />
+                </Center>
+              ) : elections.filter(e => e.status === 'completed').length === 0 ? (
+                <Box 
+                  p={8} 
+                  textAlign="center" 
+                  borderWidth="1px" 
+                  borderRadius="lg"
+                  bg={bgSecColor}
+                >
+                  <Heading size="md" mb={2}>No Completed Elections</Heading>
+                  <Text>You don't have any completed elections yet.</Text>
+                </Box>
+              ) : (
+                <TableContainer>
+                  <Table variant="simple">
+                    <Thead>
+                      <Tr>
+                        <Th>Title</Th>
+                        <Th>Date</Th>
+                        <Th>Participation</Th>
+                        <Th>Actions</Th>
                       </Tr>
-                    ))}
-                  </Tbody>
-                </Table>
-              </TableContainer>
-            </TabPanel>
-
-            <TabPanel px={0}>
-              <TableContainer>
-                <Table variant="simple">
-                  <Thead>
-                    <Tr>
-                      <Th>Title</Th>
-                      <Th>Timeline</Th>
-                      <Th>Participation</Th>
-                      <Th>Actions</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {elections
-                      .filter((e) => e.status === "active")
-                      .map((election) => (
-                        <Tr key={election.id}>
-                          <Td>
-                            <Text fontWeight="semibold">{election.title}</Text>
-                            <Text fontSize="sm" color="gray.600" noOfLines={1}>
-                              {election.description}
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Text fontSize="sm">
-                              {formatDate(election.startDate).split(",")[0]}
-                              {" - "}
-                              {formatDate(election.endDate).split(",")[0]}
-                            </Text>
-                            <Text
-                              fontSize="sm"
-                              fontWeight="medium"
-                              color="brand.600"
-                            >
-                              {getTimeInfo(election)}
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Text fontSize="sm">
-                              {election.totalVotesCast} / {election.votersCount}{" "}
-                              votes
-                            </Text>
-                            <Text fontSize="sm">
-                              {election.votersCount > 0
-                                ? `${Math.round(
-                                    (election.totalVotesCast /
-                                      election.votersCount) *
-                                      100
-                                  )}% participation`
-                                : "0% participation"}
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Button
-                              as={RouterLink}
-                              to={`/elections/${election.id}`}
-                              size="sm"
-                              leftIcon={<FaEye />}
-                              colorScheme="brand"
-                            >
-                              Monitor
-                            </Button>
-                          </Td>
-                        </Tr>
-                      ))}
-                  </Tbody>
-                </Table>
-              </TableContainer>
-            </TabPanel>
-
-            <TabPanel px={0}>
-              {/* Content for Upcoming tab */}
-              <TableContainer>
-                <Table variant="simple">
-                  <Thead>
-                    <Tr>
-                      <Th>Title</Th>
-                      <Th>Timeline</Th>
-                      <Th>Registered Voters</Th>
-                      <Th>Actions</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {elections
-                      .filter((e) => e.status === "upcoming")
-                      .map((election) => (
-                        <Tr key={election.id}>
-                          <Td>
-                            <Text fontWeight="semibold">{election.title}</Text>
-                            <Text fontSize="sm" color="gray.600" noOfLines={1}>
-                              {election.description}
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Text fontSize="sm">
-                              {formatDate(election.startDate).split(",")[0]}
-                              {" - "}
-                              {formatDate(election.endDate).split(",")[0]}
-                            </Text>
-                            <Text
-                              fontSize="sm"
-                              fontWeight="medium"
-                              color="brand.600"
-                            >
-                              {getTimeInfo(election)}
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Text fontSize="sm">
-                              {election.votersCount} voters registered
-                            </Text>
-                          </Td>
-                          <Td>
-                            <HStack spacing={2}>
-                              <IconButton
-                                icon={<FaEdit />}
-                                aria-label="Edit"
+                    </Thead>
+                    <Tbody>
+                      {electionsArray
+                        .filter((e) => e.status === "completed")
+                        .map((election) => (
+                          <Tr key={election.id}>
+                            <Td>
+                              <Text fontWeight="semibold">{election.title}</Text>
+                              <Text fontSize="sm" color="gray.600" noOfLines={1}>
+                                {election.description}
+                              </Text>
+                            </Td>
+                            <Td>
+                              <Text fontSize="sm">
+                                {formatDate(election.startDate).split(",")[0]}
+                                {" - "}
+                                {formatDate(election.endDate).split(",")[0]}
+                              </Text>
+                              <Text fontSize="sm" color="gray.600">
+                                Completed
+                              </Text>
+                            </Td>
+                            <Td>
+                              <Text fontSize="sm">
+                                {election.totalVotesCast} / {election.totalEligibleVoters}{" "}
+                                votes
+                              </Text>
+                              <Text fontSize="sm">
+                                {election.totalEligibleVoters > 0
+                                  ? `${Math.round(
+                                      (election.totalVotesCast /
+                                        election.totalEligibleVoters) *
+                                        100
+                                    )}% participation`
+                                  : "0% participation"}
+                              </Text>
+                            </Td>
+                            <Td>
+                              <Button
+                                as={RouterLink}
+                                to={`/results/${election.id}`}
                                 size="sm"
-                                onClick={() => handleEditElection(election)}
                                 colorScheme="blue"
-                              />
-                              <IconButton
-                                icon={<FaTrash />}
-                                aria-label="Delete"
-                                size="sm"
-                                onClick={() =>
-                                  handleDeleteElection(election.id)
-                                }
-                                colorScheme="red"
-                              />
-                            </HStack>
-                          </Td>
-                        </Tr>
-                      ))}
-                  </Tbody>
-                </Table>
-              </TableContainer>
-            </TabPanel>
-
-            <TabPanel px={0}>
-              {/* Content for Completed tab */}
-              <TableContainer>
-                <Table variant="simple">
-                  <Thead>
-                    <Tr>
-                      <Th>Title</Th>
-                      <Th>Date</Th>
-                      <Th>Participation</Th>
-                      <Th>Actions</Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {elections
-                      .filter((e) => e.status === "completed")
-                      .map((election) => (
-                        <Tr key={election.id}>
-                          <Td>
-                            <Text fontWeight="semibold">{election.title}</Text>
-                            <Text fontSize="sm" color="gray.600" noOfLines={1}>
-                              {election.description}
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Text fontSize="sm">
-                              {formatDate(election.startDate).split(",")[0]}
-                              {" - "}
-                              {formatDate(election.endDate).split(",")[0]}
-                            </Text>
-                            <Text fontSize="sm" color="gray.600">
-                              Completed
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Text fontSize="sm">
-                              {election.totalVotesCast} / {election.votersCount}{" "}
-                              votes
-                            </Text>
-                            <Text fontSize="sm">
-                              {election.votersCount > 0
-                                ? `${Math.round(
-                                    (election.totalVotesCast /
-                                      election.votersCount) *
-                                      100
-                                  )}% participation`
-                                : "0% participation"}
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Button
-                              as={RouterLink}
-                              to={`/results/${election.id}`}
-                              size="sm"
-                              colorScheme="blue"
-                              leftIcon={<FaEye />}
-                            >
-                              View Results
-                            </Button>
-                          </Td>
-                        </Tr>
-                      ))}
-                  </Tbody>
-                </Table>
-              </TableContainer>
+                                leftIcon={<FaEye />}
+                              >
+                                View Results
+                              </Button>
+                            </Td>
+                          </Tr>
+                        ))}
+                    </Tbody>
+                  </Table>
+                </TableContainer>
+              )}
             </TabPanel>
           </TabPanels>
         </Tabs>
@@ -1051,6 +1229,20 @@ const AdminDashboard = () => {
                     />
                   </FormControl>
                 </SimpleGrid>
+                
+                <FormControl isRequired>
+                  <FormLabel>Voting Instructions</FormLabel>
+                  <Textarea
+                    name="instructions"
+                    value={formData.instructions}
+                    onChange={handleInputChange}
+                    placeholder="Instructions for voters"
+                    rows={2}
+                  />
+                  <FormHelperText>
+                    Clear instructions help voters understand how to cast their vote correctly.
+                  </FormHelperText>
+                </FormControl>
 
                 <FormControl>
                   <FormLabel>Election Type</FormLabel>
@@ -1474,11 +1666,11 @@ const AdminDashboard = () => {
                       <Text fontWeight="bold">Duration:</Text>
                       <Text>
                         {formData.startDate
-                          ? new Date(formData.startDate).toLocaleString()
+                          ? formatDate(formData.startDate)
                           : "Not set"}
                         {" to "}
                         {formData.endDate
-                          ? new Date(formData.endDate).toLocaleString()
+                          ? formatDate(formData.endDate)
                           : "Not set"}
                       </Text>
                     </Flex>
@@ -1556,7 +1748,22 @@ const AdminDashboard = () => {
               </Button>
             )}
 
-            {activeStep < steps.length - 1 ? (
+            {selectedElection ? (
+              // For editing existing election
+              <Button
+                colorScheme="brand"
+                onClick={handleSubmit}
+                isDisabled={
+                  !formData.title ||
+                  !formData.description ||
+                  !formData.startDate ||
+                  !formData.endDate
+                }
+              >
+                Update Election
+              </Button>
+            ) : activeStep < steps.length - 1 ? (
+              // For creating new election - intermediate steps
               <Button
                 colorScheme="brand"
                 onClick={handleNextStep}
@@ -1572,6 +1779,7 @@ const AdminDashboard = () => {
                 Next
               </Button>
             ) : (
+              // For creating new election - final step
               <Button colorScheme="brand" onClick={handleCreateElectionFinal}>
                 Create Election
               </Button>

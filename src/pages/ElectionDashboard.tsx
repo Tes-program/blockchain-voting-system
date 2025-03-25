@@ -25,118 +25,85 @@ import {
   useColorModeValue,
   Divider,
   Skeleton,
+  useToast,
 } from '@chakra-ui/react';
 import { FaCalendarAlt, FaUsers, FaCheckCircle, FaHourglassHalf, FaBriefcase } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
+import { getAllElections } from '../services/electionService';
 
 // Mock data - in a real app, this would come from your API
-const mockElections = [
-  {
-    id: '1',
-    title: 'Student Union Presidential Election',
-    description: 'Vote for the next Student Union President for the academic year 2024/2025.',
-    startDate: '2025-03-10T09:00:00',
-    endDate: '2025-03-12T17:00:00',
-    status: 'upcoming',
-    type: 'simple',
-    candidates: 5,
-    votersCount: 324,
-    hasVoted: false,
-  },
-  {
-    id: '2',
-    title: 'Department Representative Election',
-    description: 'Choose your department representatives for various committees.',
-    startDate: '2025-03-05T10:00:00',
-    endDate: '2025-03-07T16:00:00',
-    status: 'active',
-    type: 'simple',
-    candidates: 12,
-    votersCount: 156,
-    hasVoted: false,
-  },
-  {
-    id: '3',
-    title: 'Campus Facilities Referendum',
-    description: 'Vote on the proposed changes to campus facilities and resource allocation.',
-    startDate: '2025-02-25T08:00:00',
-    endDate: '2025-02-28T20:00:00',
-    status: 'completed',
-    type: 'simple',
-    candidates: 2,
-    votersCount: 567,
-    hasVoted: true,
-  },
-  {
-    id: '4',
-    title: 'Student Council Election',
-    description: 'Elect members of the student council for the next academic year.',
-    startDate: '2025-02-15T09:00:00',
-    endDate: '2025-02-18T17:00:00',
-    status: 'completed',
-    type: 'simple',
-    candidates: 8,
-    votersCount: 412,
-    hasVoted: true,
-  },
-  {
-    id: '5',
-    title: 'Faculty Council Election',
-    description: 'Vote for representatives to serve on the Faculty Council for the 2025-2026 academic year.',
-    startDate: '2025-03-15T08:00:00',
-    endDate: '2025-03-20T18:00:00',
-    status: 'upcoming',
-    type: 'complex',
-    positions: 4, // Number of different positions to vote for
-    candidates: 10, // Total candidates across all positions
-    votersCount: 120,
-    hasVoted: false,
-  },
-];
 
 const ElectionsDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [elections, setElections] = useState<Array<{
-    id: string;
-    title: string;
-    description: string;
-    startDate: string;
-    endDate: string;
-    status: string;
-    type: string;
-    candidates: number;
-    votersCount: number;
-    hasVoted: boolean;
-    positions?: number;
-  }>>([]);
+  const toast = useToast();
+  const [elections, setElections] = useState<ElectionType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const bgSecColor = useColorModeValue('gray.50', 'gray.700')
+  const bgSecColor = useColorModeValue('gray.50', 'gray.700');
 
-  // Fetch elections data
+  // Fetch elections data from API
   useEffect(() => {
-    // Simulate API call
-    const fetchData = async () => {
+    const fetchElections = async () => {
       setIsLoading(true);
       try {
-        // In a real app, this would be an API call
-        setTimeout(() => {
-          setElections(mockElections);
-          setIsLoading(false);
-        }, 1000);
+        const response = await getAllElections();
+        
+        // Check if response is successful and data is an array
+        if (response.success && Array.isArray(response.data)) {
+          setElections(response.data);
+        } else if (response.success && typeof response.data === 'object' && !Array.isArray(response.data)) {
+          // If data is an object but not an array, it might have a different structure
+          // Check if there's a property that contains the elections array
+          if (response.data.elections && Array.isArray(response.data.elections)) {
+            setElections(response.data.elections);
+          } else {
+            // If we can't find an array, log error and set empty array
+            console.error("Unexpected data format:", response.data);
+            setElections([]);
+            toast({
+              title: "Data format error",
+              description: "Unable to process elections data. Please try again later.",
+              status: "error",
+              duration: 5000,
+              isClosable: true,
+            });
+          }
+        } else {
+          // Handle unsuccessful response
+          console.error("Failed to fetch elections:", response.message || "Unknown error");
+          setElections([]);
+          toast({
+            title: "Error fetching elections",
+            description: response.message || "Failed to load elections",
+            status: "error",
+            duration: 5000,
+            isClosable: true,
+          });
+        }
       } catch (error) {
         console.error('Error fetching elections:', error);
+        setElections([]);
+        toast({
+          title: "Error",
+          description: "Failed to load elections. Please try again later.",
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+      } finally {
         setIsLoading(false);
       }
     };
 
-    fetchData();
-  }, []);
+    fetchElections();
+  }, [toast]);
 
-  // Filter elections by status
-  const activeElections = elections.filter(election => election.status === 'active');
-  const upcomingElections = elections.filter(election => election.status === 'upcoming');
-  const completedElections = elections.filter(election => election.status === 'completed');
+  // Filter elections by status - with safety checks
+  const activeElections = Array.isArray(elections) ? elections.filter(election => election.status === 'active') : [];
+  const upcomingElections = Array.isArray(elections) ? elections.filter(election => election.status === 'upcoming') : [];
+  const completedElections = Array.isArray(elections) ? elections.filter(election => election.status === 'completed') : [];
+
+
 
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -189,17 +156,17 @@ const ElectionsDashboard = () => {
 
   // Election card component
   type ElectionType = {
-    id: string;
+    _id: string;
     title: string;
     description: string;
     startDate: string;
     endDate: string;
     status: string;
     type: string;
-    candidates: number;
-    votersCount: number;
+    totalCandidates: number;
+    totalEligibleVoters: number;
     hasVoted: boolean;
-    positions?: number;
+    numberOfPositions: number;
   };
 
   const ElectionCard = ({ election }: { election: ElectionType }) => {
@@ -257,8 +224,8 @@ const ElectionsDashboard = () => {
               <Icon as={FaUsers} color="brand.500" />
               <Text fontSize="sm">
                 {election.type === 'simple' 
-                  ? `${election.candidates} candidate${election.candidates !== 1 ? 's' : ''} • ${election.votersCount} voter${election.votersCount !== 1 ? 's' : ''}`
-                  : `${election.votersCount} voter${election.votersCount !== 1 ? 's' : ''}`
+                  ? `${election.totalCandidates} candidate${election.totalCandidates !== 1 ? 's' : ''} • ${election.totalEligibleVoters} voter${election.totalEligibleVoters !== 1 ? 's' : ''}`
+                  : `${election.totalEligibleVoters} voter${election.totalEligibleVoters !== 1 ? 's' : ''}`
                 }
               </Text>
             </HStack>
@@ -267,7 +234,7 @@ const ElectionsDashboard = () => {
               <HStack spacing={2}>
                 <Icon as={FaBriefcase} color="brand.500" />
                 <Text fontSize="sm">
-                  {election.positions} position{election.positions !== 1 ? 's' : ''} • {election.candidates} candidate{election.candidates !== 1 ? 's' : ''}
+                  {election.numberOfPositions} position{election.numberOfPositions !== 1 ? 's' : ''} • {election.totalCandidates} candidate{election.totalCandidates !== 1 ? 's' : ''}
                 </Text>
               </HStack>
             )}
@@ -289,7 +256,7 @@ const ElectionsDashboard = () => {
           {election.status === 'active' && !election.hasVoted && (
             <Button 
               as={RouterLink} 
-              to={`/vote/${election.id}`}
+              to={`/vote/${election._id}`}
               colorScheme="brand" 
               size="md" 
               width="full"
@@ -301,7 +268,7 @@ const ElectionsDashboard = () => {
           {election.status === 'active' && election.hasVoted && (
             <Button 
               as={RouterLink} 
-              to={`/verify/${election.id}`}
+              to={`/verify/${election._id}`}
               variant="outline" 
               colorScheme="brand" 
               size="md" 
@@ -314,7 +281,7 @@ const ElectionsDashboard = () => {
           {election.status === 'upcoming' && (
             <Button 
               as={RouterLink} 
-              to={`/elections/${election.id}`}
+              to={`/elections/${election._id}`}
               variant="outline" 
               colorScheme="brand" 
               size="md" 
@@ -327,7 +294,7 @@ const ElectionsDashboard = () => {
           {election.status === 'completed' && (
             <Button 
               as={RouterLink} 
-              to={`/results/${election.id}`}
+              to={`/results/${election._id}`}
               variant="solid" 
               colorScheme="blue" 
               size="md" 
@@ -395,7 +362,7 @@ const ElectionsDashboard = () => {
             ) : activeElections.length > 0 ? (
               <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
                 {activeElections.map((election) => (
-                  <ElectionCard key={election.id} election={election} />
+                  <ElectionCard key={election._id} election={election} />
                 ))}
               </SimpleGrid>
             ) : (
@@ -418,7 +385,7 @@ const ElectionsDashboard = () => {
             ) : upcomingElections.length > 0 ? (
               <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
                 {upcomingElections.map((election) => (
-                  <ElectionCard key={election.id} election={election} />
+                  <ElectionCard key={election._id} election={election} />
                 ))}
               </SimpleGrid>
             ) : (
@@ -441,7 +408,7 @@ const ElectionsDashboard = () => {
             ) : completedElections.length > 0 ? (
               <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
                 {completedElections.map((election) => (
-                  <ElectionCard key={election.id} election={election} />
+                  <ElectionCard key={election._id} election={election} />
                 ))}
               </SimpleGrid>
             ) : (

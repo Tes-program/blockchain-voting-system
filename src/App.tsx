@@ -1,11 +1,7 @@
-// src/App.tsx
+// Updated src/App.tsx
 import { Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { Box } from '@chakra-ui/react';
 import LandingPage from './pages/LandingPage';
-// import ElectionsDashboard from './pages/ElectionsDashboard';
-// import VotingBooth from './pages/VotingBooth';
-// import VoteVerification from './pages/VoteVerification';
-// import ResultsPage from './pages/ResultsPage';
 import AboutPage from './pages/AboutPage';
 import ProfilePage from './pages/ProfilePage';
 import Layout from './components/layout/Layout';
@@ -20,14 +16,12 @@ import { useAuth } from './context/AuthContext';
 import ElectionDetails from './pages/ElectionDetails';
 
 function App() {
-  const { userRole } = useAuth();
-
+  const { isAuthenticated, needsRegistration, userRole } = useAuth();
+  const location = useLocation();
+  
   const RequireRegistration = () => {
-    const { isAuthenticated, isRegistrationComplete } = useAuth();
-    const location = useLocation();
-    
-    if (isAuthenticated && !isRegistrationComplete && !location.pathname.includes('/register')) {
-      // Redirect to registration if authenticated but not registered
+    if (isAuthenticated && needsRegistration && !location.pathname.includes('/register')) {
+      // Redirect to registration if needs to complete registration
       return <Navigate to="/register" state={{ from: location }} replace />;
     }
     
@@ -41,39 +35,40 @@ function App() {
           <Route index element={<LandingPage />} />
           <Route path="about" element={<AboutPage />} />
           <Route path="register" element={<VoterRegistration />} />
-          <Route path="elections" element={<ElectionsDashboard />} />
-          <Route path="admin" element={<AdminDashboard />} />
-          <Route path="vote/:electionId" element={<VotingBooth />} />
-          <Route path="verify/:voteId" element={<VoteVerification />} />
-          <Route path="results/:electionId" element={<ResultsPage />} />
-          <Route path="elections/:electionId" element={<ElectionDetails />} />
-
-          {/* <Route path="results/:electionId" element={<ResultsPage />} /> */}
           
-          {/* Protected voter routes */}
-          <Route element={<ProtectedRoute redirectPath="/" />}>
-            {/* <Route 
-              path="elections" 
+          {/* Routes that require registration to be completed */}
+          <Route element={<RequireRegistration />}>
+            {/* Public or authenticated routes */}
+            <Route path="elections" element={<ElectionsDashboard />} />
+            <Route path="elections/:electionId" element={<ElectionDetails />} />
+            <Route path="results/:electionId" element={<ResultsPage />} />
+            
+            {/* Protected routes - require authentication */}
+            <Route element={<ProtectedRoute redirectPath="/" />}>
+              <Route path="profile" element={<ProfilePage />} />
+              <Route path="vote/:electionId" element={<VotingBooth />} />
+              <Route path="verify/:voteId" element={<VoteVerification />} />
+            </Route>
+            
+            {/* Admin routes - require institution role */}
+            <Route 
+              path="admin" 
               element={
-                userRole === 'admin' 
-                  ? <Navigate to="/admin/dashboard" replace /> 
-                  : <ElectionsDashboard />
+                <ProtectedRoute redirectPath="/">
+                  {userRole === 'institution' ? <AdminDashboard /> : <Navigate to="/elections" replace />}
+                </ProtectedRoute>
               } 
             />
-            <Route path="vote/:electionId" element={<VotingBooth />} />
-            <Route path="verify/:voteId" element={<VoteVerification />} /> */}
-            <Route path="profile" element={<ProfilePage />} />
+            
+            <Route 
+              path="admin/elections/:electionId" 
+              element={
+                <ProtectedRoute redirectPath="/">
+                  {userRole === 'institution' ? <AdminDashboard /> : <Navigate to="/elections" replace />}
+                </ProtectedRoute>
+              } 
+            />
           </Route>
-          
-          {/* Admin routes */}
-          <Route 
-            path="admin/elections/:electionId" 
-            element={
-              <ProtectedRoute redirectPath="/">
-                {userRole === 'admin' ? <AdminDashboard /> : <Navigate to="/elections" replace />}
-              </ProtectedRoute>
-            } 
-          />
         </Route>
       </Routes>
     </Box>

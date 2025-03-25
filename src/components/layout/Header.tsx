@@ -1,6 +1,4 @@
-// src/components/layout/Header.tsx
-import { useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Box,
   Flex,
@@ -48,7 +46,31 @@ const NAV_ITEMS: Array<NavItem> = [
 
 const Header = () => {
   const { isOpen, onToggle } = useDisclosure();
-  const { isAuthenticated, user, login, logout, isLoading } = useAuth();
+  const { isAuthenticated, user, login, logout, isLoading, needsRegistration, userRole } = useAuth();
+  const navigate = useNavigate();
+
+
+  const handleLoginClick = async () => {
+    try {
+      const result = await login();
+      
+      if (result.success) {
+        if (result.userExists) {
+          // User exists, redirect based on role
+          if (result.role === 'institution') {
+            navigate('/admin');
+          } else {
+            navigate('/elections');
+          }
+        } else if (result.needsRegistration) {
+          // User needs to register, redirect to registration
+          navigate('/register');
+        }
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+    }
+  };
 
   return (
     <Box
@@ -118,14 +140,20 @@ const Header = () => {
               >
                 <Avatar
                   size={'sm'}
-                  src={user?.profileImage}
+                  // src={user?.profileImage}
                   name={user?.name || 'User'}
                 />
               </MenuButton>
               <MenuList zIndex={2}>
-                <MenuItem as={RouterLink} to="/elections">
-                  Dashboard
-                </MenuItem>
+                {userRole === 'institution' ? (
+                  <MenuItem as={RouterLink} to="/admin">
+                    Admin Dashboard
+                  </MenuItem>
+                ) : (
+                  <MenuItem as={RouterLink} to="/elections">
+                    Elections Dashboard
+                  </MenuItem>
+                )}
                 <MenuItem as={RouterLink} to="/profile">
                   Profile
                 </MenuItem>
@@ -133,10 +161,26 @@ const Header = () => {
                 <MenuItem onClick={logout}>Sign Out</MenuItem>
               </MenuList>
             </Menu>
+          ) : needsRegistration ? (
+            <>
+              <Button
+                as={RouterLink}
+                to="/register"
+                fontSize={'sm'}
+                fontWeight={600}
+                color={'white'}
+                bg={'brand.500'}
+                _hover={{
+                  bg: 'brand.600',
+                }}
+              >
+                Complete Registration
+              </Button>
+            </>
           ) : (
             <>
               <Button
-                onClick={login}
+                onClick={handleLoginClick}
                 fontSize={'sm'}
                 fontWeight={600}
                 color={'white'}

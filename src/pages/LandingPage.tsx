@@ -1,4 +1,4 @@
-// src/pages/LandingPage.tsx
+// Updated src/pages/LandingPage.tsx
 import {
   Box,
   Heading,
@@ -12,10 +12,9 @@ import {
   Flex,
   SimpleGrid,
 } from "@chakra-ui/react";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { FaLock, FaChartBar, FaUserShield } from "react-icons/fa";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
 
 const Feature = ({
   title,
@@ -49,8 +48,84 @@ const Feature = ({
 };
 
 const LandingPage = () => {
-  const { isAuthenticated, login } = useAuth();
-  const  navigate  = useNavigate();
+  const { isAuthenticated, needsRegistration, userRole, login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLoginClick = async () => {
+    try {
+      const result = await login();
+      
+      if (result.success) {
+        if (result.userExists) {
+          // User exists, redirect based on role
+          if (result.role === 'institution') {
+            navigate('/admin');
+          } else {
+            navigate('/elections');
+          }
+        } else if (result.needsRegistration) {
+          // User needs to register, redirect to registration
+          navigate('/register');
+        }
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+    }
+  };
+
+  // Determine the main action button based on auth state
+  const renderActionButton = () => {
+    if (isAuthenticated) {
+      // User is authenticated, show dashboard button based on role
+      return (
+        <Button
+          onClick={() => navigate(userRole === 'institution' ? '/admin' : '/elections')}
+          colorScheme={"blue"}
+          bg={"brand.500"}
+          rounded={"full"}
+          px={6}
+          _hover={{
+            bg: "brand.600",
+          }}
+        >
+          {userRole === 'institution' ? 'Admin Dashboard' : 'Election Dashboard'}
+        </Button>
+      );
+    } else if (needsRegistration) {
+      // User needs to complete registration
+      return (
+        <Button
+          onClick={() => navigate('/register')}
+          colorScheme={"blue"}
+          bg={"brand.500"}
+          rounded={"full"}
+          px={6}
+          _hover={{
+            bg: "brand.600",
+          }}
+        >
+          Complete Registration
+        </Button>
+      );
+    } else {
+      // User is not authenticated
+      return (
+        <Button
+          onClick={handleLoginClick}
+          colorScheme={"blue"}
+          bg={"brand.500"}
+          rounded={"full"}
+          px={6}
+          _hover={{
+            bg: "brand.600",
+          }}
+        >
+          Sign In / Register
+        </Button>
+      );
+    }
+  };
+
   return (
     <Box>
       <Container maxW={"3xl"}>
@@ -82,18 +157,8 @@ const LandingPage = () => {
             alignSelf={"center"}
             position={"relative"}
           >
-            <Button
-              onClick={isAuthenticated ? () => navigate("/elections") : login}
-              colorScheme={"blue"}
-              bg={"brand.500"}
-              rounded={"full"}
-              px={6}
-              _hover={{
-                bg: "brand.600",
-              }}
-            >
-              {isAuthenticated ? "My Dashboard" : "Sign In / Register"}
-            </Button>
+            {renderActionButton()}
+            
             <Button
               as={RouterLink}
               to="/elections"

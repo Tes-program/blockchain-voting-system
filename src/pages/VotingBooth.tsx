@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/pages/VotingBooth.tsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -13,7 +14,6 @@ import {
   CardBody,
   RadioGroup,
   Radio,
-  Divider,
   Alert,
   AlertIcon,
   AlertTitle,
@@ -36,11 +36,6 @@ import {
   Center,
   Icon,
   useColorModeValue,
-  Tabs,
-  TabList,
-  Tab,
-  TabPanels,
-  TabPanel,
   Stepper,
   Step,
   StepIndicator,
@@ -56,187 +51,41 @@ import {
   FaUserCircle, 
   FaCheckCircle, 
   FaLock, 
-  FaExclamationTriangle,
   FaArrowRight,
   FaArrowLeft,
   FaVoteYea
 } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
+import { getElectionById } from '../services/electionService';
+import { castVote } from '../services/voteService';
 
-// Mock data for a complex election with multiple roles
-const mockComplexElection = {
-  id: '5',
-  title: 'Faculty Council Election',
-  description: 'Vote for representatives to serve on the Faculty Council for the 2025-2026 academic year.',
-  instructions: 'Select ONE candidate for each position. You must vote for all positions to complete your ballot.',
-  startDate: '2025-03-15T08:00:00',
-  endDate: '2025-03-20T18:00:00',
-  status: 'active',
-  type: 'complex',
-  roles: [
-    {
-      id: 'role-1',
-      title: 'Faculty President',
-      description: 'Leads the faculty council and represents student interests to the administration.',
-      candidates: [
-        {
-          id: 'c1-1',
-          name: 'Dr. James Wilson',
-          party: 'Academic Excellence',
-          position: 'Faculty President',
-          manifesto: 'I will work to improve student facilities and ensure faculty development opportunities.',
-          imageUrl: 'https://randomuser.me/api/portraits/men/32.jpg',
-        },
-        {
-          id: 'c1-2',
-          name: 'Dr. Sarah Miller',
-          party: 'Progressive Faculty',
-          position: 'Faculty President',
-          manifesto: 'My goal is to foster interdisciplinary collaboration and innovative teaching methods.',
-          imageUrl: 'https://randomuser.me/api/portraits/women/44.jpg',
-        },
-        {
-          id: 'c1-3',
-          name: 'Dr. Robert Chen',
-          party: 'Independent',
-          position: 'Faculty President',
-          manifesto: 'I believe in transparent governance and will prioritize student-faculty engagement.',
-          imageUrl: 'https://randomuser.me/api/portraits/men/76.jpg',
-        }
-      ]
-    },
-    {
-      id: 'role-2',
-      title: 'Vice President for Academic Affairs',
-      description: 'Oversees all academic matters and curriculum development.',
-      candidates: [
-        {
-          id: 'c2-1',
-          name: 'Dr. Emily Johnson',
-          party: 'Academic Excellence',
-          position: 'VP Academic Affairs',
-          manifesto: 'I will focus on curriculum innovation and improving academic resources.',
-          imageUrl: 'https://randomuser.me/api/portraits/women/22.jpg',
-        },
-        {
-          id: 'c2-2',
-          name: 'Dr. Michael Williams',
-          party: 'Progressive Faculty',
-          position: 'VP Academic Affairs',
-          manifesto: 'I will champion student-centered learning and faculty development initiatives.',
-          imageUrl: 'https://randomuser.me/api/portraits/men/52.jpg',
-        }
-      ]
-    },
-    {
-      id: 'role-3',
-      title: 'Treasurer',
-      description: 'Manages the faculty budget and oversees financial planning.',
-      candidates: [
-        {
-          id: 'c3-1',
-          name: 'Dr. Aisha Patel',
-          party: 'Academic Excellence',
-          position: 'Treasurer',
-          manifesto: 'I will ensure transparent financial management and equitable resource allocation.',
-          imageUrl: 'https://randomuser.me/api/portraits/women/28.jpg',
-        },
-        {
-          id: 'c3-2',
-          name: 'Dr. David Kim',
-          party: 'Independent',
-          position: 'Treasurer',
-          manifesto: 'I will implement efficient budgeting practices and seek additional funding sources.',
-          imageUrl: 'https://randomuser.me/api/portraits/men/42.jpg',
-        }
-      ]
-    },
-    {
-      id: 'role-4',
-      title: 'Secretary',
-      description: 'Maintains records and facilitates communication within the faculty.',
-      candidates: [
-        {
-          id: 'c4-1',
-          name: 'Dr. Lisa Martinez',
-          party: 'Progressive Faculty',
-          position: 'Secretary',
-          manifesto: 'I will improve communication channels and maintain accurate documentation.',
-          imageUrl: 'https://randomuser.me/api/portraits/women/67.jpg',
-        },
-        {
-          id: 'c4-2',
-          name: 'Dr. John Thompson',
-          party: 'Academic Excellence',
-          position: 'Secretary',
-          manifesto: 'I will modernize our record-keeping systems and ensure timely information sharing.',
-          imageUrl: 'https://randomuser.me/api/portraits/men/45.jpg',
-        },
-        {
-          id: 'c4-3',
-          name: 'Dr. Grace Lee',
-          party: 'Independent',
-          position: 'Secretary',
-          manifesto: 'I will focus on transparency and accessibility of faculty information.',
-          imageUrl: 'https://randomuser.me/api/portraits/women/33.jpg',
-        }
-      ]
-    }
-  ]
-};
+interface Candidate {
+  id: string;
+  name: string;
+  party: string;
+  position: string;
+  manifesto: string;
+  imageUrl: string;
+}
 
-// Mock data for a simple election (single role)
-const mockSimpleElection = {
-  id: '2',
-  title: 'Department Representative Election',
-  description: 'Choose your department representatives for various committees.',
-  instructions: 'Select ONE candidate from the list below. Your vote is confidential and secure. Once submitted, your vote cannot be changed.',
-  startDate: '2025-03-05T10:00:00',
-  endDate: '2025-03-07T16:00:00',
-  status: 'active',
-  type: 'simple',
-  roles: [
-    {
-      id: 'role-1',
-      title: 'Department Representative',
-      description: 'Represents the department in faculty meetings and committees.',
-      candidates: [
-        {
-          id: '1',
-          name: 'Sarah Johnson',
-          party: 'Progressive Student Alliance',
-          position: 'Department Representative',
-          manifesto: 'I will work to improve student facilities and ensure that student voices are heard in all department decisions.',
-          imageUrl: 'https://randomuser.me/api/portraits/women/44.jpg',
-        },
-        {
-          id: '2',
-          name: 'Michael Chen',
-          party: 'Student Action Committee',
-          position: 'Department Representative',
-          manifesto: 'My goal is to create more research opportunities for students and facilitate better communication between faculty and students.',
-          imageUrl: 'https://randomuser.me/api/portraits/men/22.jpg',
-        },
-        {
-          id: '3',
-          name: 'Aisha Patel',
-          party: 'Independent',
-          position: 'Department Representative',
-          manifesto: 'I believe in inclusive education and will work towards ensuring equal opportunities for all students regardless of their background.',
-          imageUrl: 'https://randomuser.me/api/portraits/women/28.jpg',
-        },
-        {
-          id: '4',
-          name: 'James Wilson',
-          party: 'Tech Innovation Group',
-          position: 'Department Representative',
-          manifesto: 'I will push for curriculum modernization and more practical, hands-on learning experiences.',
-          imageUrl: 'https://randomuser.me/api/portraits/men/32.jpg',
-        }
-      ]
-    }
-  ]
-};
+interface Role {
+  id: string;
+  title: string;
+  description: string;
+  candidates: Candidate[];
+}
+
+interface Election {
+  id: string;
+  title: string;
+  description: string;
+  instructions: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  type: string;
+  roles: Role[];
+}
 
 const VotingBooth = () => {
   const { electionId } = useParams();
@@ -244,29 +93,6 @@ const VotingBooth = () => {
   const navigate = useNavigate();
   const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
-  interface Election {
-    id: string;
-    title: string;
-    description: string;
-    instructions: string;
-    startDate: string;
-    endDate: string;
-    status: string;
-    type: string;
-    roles: Array<{
-      id: string;
-      title: string;
-      description: string;
-      candidates: Array<{
-        id: string;
-        name: string;
-        party: string;
-        position: string;
-        manifesto: string;
-        imageUrl: string;
-      }>;
-    }>;
-  }
 
   const [election, setElection] = useState<Election | null>(null);
   const [selectedCandidates, setSelectedCandidates] = useState<{ [key: string]: string }>({});
@@ -283,42 +109,61 @@ const VotingBooth = () => {
     count: election?.roles?.length || 1,
   });
 
-  // Fetch election data
+  // Fetch election data from API
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchElection = async () => {
       setIsLoading(true);
       try {
-        // In a real app, this would be an API call based on electionId
-        // For demo purposes, we're using the mock data based on a condition
-        setTimeout(() => {
-          // Use complex election for ID 5, simple for others
-          const electionData = electionId === '5' ? mockComplexElection : mockSimpleElection;
-          setElection(electionData);
+        if (!electionId) {
+          toast({
+            title: "Error",
+            description: "Invalid election ID",
+            status: "error",
+            duration: 5000,
+            isClosable: true,
+          });
+          navigate('/elections');
+          return;
+        }
+
+        const response = await getElectionById(electionId);
+        
+        if (response.success) {
+          setElection(response.data);
           
-          // Initialize selectedCandidates object
+          // Initialize selectedCandidates object based on roles
           const initialSelections: { [key: string]: string } = {};
-          electionData.roles.forEach(role => {
+          response.data.roles.forEach((role: Role) => {
             initialSelections[role.id] = '';
           });
           setSelectedCandidates(initialSelections);
-          
-          setIsLoading(false);
-        }, 1000);
+        } else {
+          toast({
+            title: "Error",
+            description: response.message || "Failed to load election",
+            status: "error",
+            duration: 5000,
+            isClosable: true,
+          });
+          navigate('/elections');
+        }
       } catch (error) {
         console.error('Error fetching election:', error);
         toast({
-          title: 'Error',
-          description: 'Failed to load election data. Please try again.',
-          status: 'error',
+          title: "Error",
+          description: "Failed to load election. Please try again later.",
+          status: "error",
           duration: 5000,
           isClosable: true,
         });
+        navigate('/elections');
+      } finally {
         setIsLoading(false);
       }
     };
 
-    fetchData();
-  }, [electionId, toast]);
+    fetchElection();
+  }, [electionId, toast, navigate]);
 
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -328,7 +173,7 @@ const VotingBooth = () => {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    } as const;
+    };
     return new Date(dateString).toLocaleDateString(undefined, options);
   };
 
@@ -404,24 +249,59 @@ const VotingBooth = () => {
     setCurrentStep(2);
     
     try {
-      // Simulate blockchain transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (!election || !electionId) {
+        throw new Error("Election data is missing");
+      }
       
-      // Mock transaction hash
-      const hash = '0x' + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join('');
-      setTransactionHash(hash);
-      setCurrentStep(3);
+      // Prepare selections for API
+      const selections = Object.keys(selectedCandidates).map(roleId => ({
+        roleId,
+        candidateId: selectedCandidates[roleId]
+      }));
       
-      // Simulate completion
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      setCurrentStep(4);
+      // Get wallet address
+      let walletAddress = user?.walletAddress;
+      if (web3 && !walletAddress) {
+        try {
+          const accounts = await web3.eth.getAccounts();
+          walletAddress = accounts[0];
+        } catch (error) {
+          console.error('Error getting wallet address:', error);
+          throw new Error("Could not get wallet address");
+        }
+      }
       
-    } catch (error) {
+      if (!walletAddress) {
+        throw new Error("Wallet address is required");
+      }
+      
+      // Cast vote via API
+      const voteData = {
+        electionId,
+        selections,
+        walletAddress
+      };
+      
+      const response = await castVote(voteData);
+      
+      if (response.success) {
+        // Set transaction hash from response
+        setTransactionHash(response.data.blockchainData.transactionHash);
+        setCurrentStep(3);
+        
+        // Move to final step after a short delay
+        setTimeout(() => {
+          setCurrentStep(4);
+        }, 1500);
+      } else {
+        throw new Error(response.message || "Failed to submit vote");
+      }
+    } catch (error: any) {
       console.error('Error submitting vote:', error);
       toast({
-        title: 'Transaction failed',
-        description: 'There was an error submitting your vote. Please try again.',
-        status: 'error',
+        title: "Transaction failed",
+        description: error.message || "There was an error submitting your vote. Please try again.",
+        status: "error",
         duration: 5000,
         isClosable: true,
       });
@@ -434,7 +314,8 @@ const VotingBooth = () => {
   // Handle viewing receipt
   const handleViewReceipt = () => {
     onClose();
-    navigate(`/verify/${electionId}`);
+    // Navigate to the vote verification page with the receipt ID
+    navigate(`/verify/${transactionHash}`);
   };
 
   // Loading state
@@ -457,6 +338,28 @@ const VotingBooth = () => {
           <AlertIcon />
           <AlertTitle mr={2}>Election not found!</AlertTitle>
           <AlertDescription>The election you're looking for doesn't exist or has ended.</AlertDescription>
+        </Alert>
+        <Button mt={4} colorScheme="brand" onClick={() => navigate('/elections')}>
+          Back to Elections
+        </Button>
+      </Container>
+    );
+  }
+
+  // Election not active
+  if (election.status !== 'active') {
+    return (
+      <Container maxW="4xl" py={8}>
+        <Alert status="warning" variant="solid" borderRadius="md">
+          <AlertIcon />
+          <Box>
+            <AlertTitle>Voting Unavailable</AlertTitle>
+            <AlertDescription>
+              {election.status === 'upcoming' 
+                ? `This election hasn't started yet. It will begin on ${formatDate(election.startDate)}.`
+                : 'This election has ended and voting is no longer available.'}
+            </AlertDescription>
+          </Box>
         </Alert>
         <Button mt={4} colorScheme="brand" onClick={() => navigate('/elections')}>
           Back to Elections
@@ -869,7 +772,7 @@ const VotingBooth = () => {
                   bg="gray.50" 
                   width="100%"
                 >
-                    <Text fontSize="sm" fontWeight="bold" mb={1}>
+                  <Text fontSize="sm" fontWeight="bold" mb={1}>
                     Transaction Hash:
                   </Text>
                   <Text fontSize="xs" fontFamily="monospace" isTruncated>
